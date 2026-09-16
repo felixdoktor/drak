@@ -109,6 +109,17 @@ with st.sidebar:
     
     st.divider()
     oddelit_stejne_kluby = st.checkbox("🚫 Oddělit posádky ze stejného oddílu v rozjížďkách", value=True)
+    
+    # NOVÉ PŘEPÍNATELNÉ TLAČÍTKO PRO ČESKÝ POHÁR
+    pouzit_cpo = st.checkbox("🏆 Nasazovat podle žebříčku Českého poháru (ČP)", value=True)
+    
+    zebricek_cp = nacti_zebricek_cpo() if pouzit_cpo else {}
+    if pouzit_cpo:
+        if zebricek_cp:
+            st.success(f"✅ Žebříček ČP načten ({len(zebricek_cp)} klubů).")
+        else:
+            st.info("ℹ️ Žebříček ČP online nedostupný (použije se standardní los).")
+
 
 # ===================================================================
 # 2. NAHRÁNÍ A KONTROLA PŘIHLÁŠEK (CSV SOUBOR)
