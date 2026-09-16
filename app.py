@@ -18,7 +18,7 @@ st.set_page_config(page_title="Startovní rozpis dračích lodí - Vícedenní",
 def over_heslo():
     """Zobrazí přihlašovací formulář a zastaví běh aplikace, dokud není zadáno správné heslo."""
     VYZADOVAT_HESLO = False   # 👈 Nastavte na False pro vypnutí, nebo True pro zapnutí
-    SPRAVNE_HESLO = "draci2026"
+    SPRAVNE_HESLO = "draci"
 
     # Pokud je heslo vypnuté, rovnou pustíme uživatele dál
     if not VYZADOVAT_HESLO:
