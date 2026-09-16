@@ -225,7 +225,7 @@ if uploaded_file is not None:
         st.error(f"❌ Chyba při otevírání souboru: {e}")
         st.stop()
 
-    # Očištění názvů sloupců (odstranění mezer)
+        # Očištění názvů sloupců (odstranění mezer)
     df_raw.columns = [str(c).strip() for c in df_raw.columns]
 
     # Vyhledání klíčových sloupců bez ohledu na velikost písmen a diakritiku
@@ -240,35 +240,77 @@ if uploaded_file is not None:
     col_kat = najdi_sloupec(["kategorie", "kat", "category"])
     col_oddil = najdi_sloupec(["oddíl", "oddil", "klub", "tým", "tym", "posádk", "posadk", "team", "club"])
 
-    # Kontrola povinných sloupců
-    chybejici = []
-    if not col_trat: chybejici.append("trať (např. 200m, 500m, 1000m)")
-    if not col_kat: chybejici.append("kategorie (např. MIX, OPEN, ŽENY)")
-    if not col_oddil: chybejici.append("oddíl / tým / posádka")
-
-    if chybejici:
-        st.error(f"⚠️ V souboru chybí následující povinné sloupce: **{', '.join(chybejici)}**.")
-        st.write("Nalezené sloupce v souboru:", list(df_raw.columns))
-        df_raw = None
+    # 1. KONTROLA A DOPLNĚNÍ TRATĚ (výběr 200m / 500m / 1000m / 2000m)
+    if not col_trat:
+        col_trat = "trať"
+        st.info("ℹ️ V souboru nebyl nalezen sloupec s tratí.")
+        vybrana_trat = st.selectbox(
+            "Zvolte trať pro všechny posádky v tomto souboru:",
+            options=["200m", "500m", "1000m", "2000m"],
+            index=0
+        )
+        df_raw[col_trat] = vybrana_trat
     else:
-        # Převedení hodnot na čistý text
-        df_raw[col_trat] = df_raw[col_trat].astype(str).str.strip()
-        df_raw[col_kat] = df_raw[col_kat].astype(str).str.strip()
-        df_raw[col_oddil] = df_raw[col_oddil].astype(str).str.strip()
-
-        with st.expander("🔍 Náhled a ruční úprava přihlášek (pokud je potřeba něco opravit)", expanded=False):
-            st.info("Zde můžete přímo v tabulce přepsat překlepy v názvu týmu nebo upravit kategorii.")
-            df_raw = st.data_editor(
-                df_raw,
-                column_order=[col_trat, col_kat, col_oddil],
-                use_container_width=True,
-                num_rows="dynamic"
+        # Pokud sloupec existuje, ale některé řádky mají prázdnou trať
+        prazdne_trate = df_raw[col_trat].isna() | (df_raw[col_trat].astype(str).str.strip() == "")
+        if prazdne_trate.any():
+            st.warning(f"⚠️ U {prazdne_trate.sum()} posádek chybí uvedená trať.")
+            vybrana_trat_nahradni = st.selectbox(
+                "Zvolte výchozí trať pro posádky s chybějícím údajem:",
+                options=["200m", "500m", "1000m", "2000m"],
+                index=0
             )
+            df_raw.loc[prazdne_trate, col_trat] = vybrana_trat_nahradni
 
-        # Unikátní identifikátor disciplíny
-        df_raw["_Disciplina_ID"] = df_raw[col_trat] + "m | " + df_raw[col_kat]
-        vsechny_discipliny = sorted(df_raw["_Disciplina_ID"].unique().tolist())
-        st.write(f"Celkem přihlášeno **{len(df_raw)} posádek** do **{len(vsechny_discipliny)}** různých disciplín.")
+    # 2. KONTROLA ODDÍLU A KATEGORIE
+    if not col_oddil:
+        st.error("❌ V souboru chybí sloupec s názvem týmu / oddílu (např. 'Oddíl', 'Klub' nebo 'Tým').")
+        st.stop()
+
+    if not col_kat:
+        col_kat = "kategorie"
+        st.warning("⚠️ Sloupec 'Kategorie' nebyl nalezen – nastavuji výchozí 'MIX'.")
+        df_raw[col_kat] = "MIX"
+
+    # 3. FILTRACE A PŘESKOČENÍ NEPLATNÝCH / PRÁZDNÝCH ŘÁDKŮ
+    puvodni_pocet = len(df_raw)
+    
+    # Převedeme na string a očistíme bílé znaky
+    df_raw[col_trat] = df_raw[col_trat].fillna("").astype(str).str.strip()
+    df_raw[col_kat] = df_raw[col_kat].fillna("").astype(str).str.strip()
+    df_raw[col_oddil] = df_raw[col_oddil].fillna("").astype(str).str.strip()
+
+    # Očištění formátu tratě: pokud je zadáno jen číslo "200", uděláme z toho "200"
+    df_raw[col_trat] = df_raw[col_trat].str.replace("m", "", case=False).str.strip()
+
+    # Ponecháme pouze řádky, které mají vyplněný oddíl i kategorii (ignorujeme prázdné řádky z Excelu)
+    platne_mask = (
+        (df_raw[col_oddil] != "") & 
+        (df_raw[col_oddil].str.lower() != "nan") &
+        (df_raw[col_kat] != "") &
+        (df_raw[col_kat].str.lower() != "nan")
+    )
+    df_raw = df_raw[platne_mask].copy().reset_index(drop=True)
+
+    preskoceno = puvodni_pocet - len(df_raw)
+    if preskoceno > 0:
+        st.caption(f"ℹ️ Přeskočeno **{preskoceno} neúplných nebo prázdných řádků**.")
+
+    # 4. INTERAKTIVNÍ TABULKA PRO KONTROLU
+    with st.expander("🔍 Náhled a ruční úprava přihlášek (pokud je potřeba něco opravit)", expanded=False):
+        st.info("Zde můžete přímo v tabulce přepsat překlepy v názvu týmu, změnit kategorii nebo trať.")
+        df_raw = st.data_editor(
+            df_raw,
+            column_order=[col_trat, col_kat, col_oddil],
+            use_container_width=True,
+            num_rows="dynamic"
+        )
+
+    # 5. VYTVOŘENÍ UNIKÁTNÍCH DISCIPLÍN
+    df_raw["_Disciplina_ID"] = df_raw[col_trat] + "m | " + df_raw[col_kat]
+    vsechny_discipliny = sorted(df_raw["_Disciplina_ID"].unique().tolist())
+    st.write(f"Celkem načteno **{len(df_raw)} platných posádek** do **{len(vsechny_discipliny)}** různých disciplín.")
+
 
     # ===================================================================
     # 3. NASTAVENÍ JEDNOTLIVÝCH DNŮ
