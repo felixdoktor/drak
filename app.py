@@ -17,7 +17,12 @@ st.set_page_config(page_title="Startovní rozpis dračích lodí - Vícedenní",
 # ===================================================================
 def over_heslo():
     """Zobrazí přihlašovací formulář a zastaví běh aplikace, dokud není zadáno správné heslo."""
-    SPRAVNE_HESLO = "draci"  # Zde si nastavte své libovolné heslo
+    VYZADOVAT_HESLO = False   # 👈 Nastavte na False pro vypnutí, nebo True pro zapnutí
+    SPRAVNE_HESLO = "draci2026"
+
+    # Pokud je heslo vypnuté, rovnou pustíme uživatele dál
+    if not VYZADOVAT_HESLO:
+        return True
 
     if "prihlasen" not in st.session_state:
         st.session_state["prihlasen"] = False
@@ -38,17 +43,11 @@ def over_heslo():
             else:
                 st.error("❌ Nesprávné heslo!")
 
-    st.stop()  # Zastaví načítání zbytku aplikace, dokud uživatel není přihlášen
+    st.stop()
 
+# Volání kontroly zůstává beze změny:
 over_heslo()
 
-# Zde již pokračuje váš stávající kód:
-# st.title("🐉 Generátor vícedenního rozpisu závodů dračích lodí")
-# with st.sidebar: ...
-
-
-st.set_page_config(page_title="Startovní rozpis dračích lodí - Vícedenní", layout="wide")
-st.title("🐉 Generátor vícedenního rozpisu závodů dračích lodí")
 
 
 # ===================================================================
