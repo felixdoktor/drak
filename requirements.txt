@@ -3,4 +3,5 @@ pandas
 ortools
 openpyxl
 beautifulsoup4
+requests
  
