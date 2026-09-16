@@ -52,7 +52,7 @@ st.title("🐉 Generátor vícedenního rozpisu závodů dračích lodí")
 
 
 # ===================================================================
-# ROBUSTNÍ STAHOVÁNÍ ŽEBŘÍČKU Z DRAGONBOAT.CZ
+# STAHOVÁNÍ ŽEBŘÍČKU Z DRAGONBOAT.CZ
 # ===================================================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def nacti_zebricek_cpo():
@@ -177,56 +177,99 @@ with st.sidebar:
 
 
 # ===================================================================
-# 2. NAHRÁNÍ A KONTROLA PŘIHLÁŠEK (CSV SOUBOR)
+# 2. NAHRÁNÍ PŘIHLÁŠEK (EXCEL / CSV / TXT)
 # ===================================================================
-st.header("1. Zápisové listiny a přihlášky")
-uploaded_file = st.file_uploader("Nahrajte CSV soubor s přihláškami:", type=["csv", "txt"])
+st.header("1. Nahrání přihlášek ze systému")
 
-def nacti_prihlasky_csv(file):
-    for enc in ["cp1250", "windows-1250", "utf-8", "iso-8859-2"]:
-        try:
-            file.seek(0)
-            df = pd.read_csv(file, sep=";", encoding=enc)
-            if any(k in [str(c).lower() for c in df.columns] for k in ["oddíl", "kategorie"]):
-                return df
-        except Exception:
-            continue
-    file.seek(0)
-    return pd.read_csv(file, sep=None, engine="python")
+uploaded_file = st.file_uploader(
+    "Nahrajte export přihlášek (Excel .xlsx / .xls nebo CSV / TXT):", 
+    type=["xlsx", "xls", "csv", "txt"]
+)
 
 df_raw = None
+
 if uploaded_file is not None:
+    file_name = uploaded_file.name.lower()
+    
     try:
-        df_raw = nacti_prihlasky_csv(uploaded_file)
-        st.success(f"✅ Úspěšně načteno {len(df_raw)} přihlášek.")
+        # A) Zpracování Excel souborů (.xlsx, .xls)
+        if file_name.endswith((".xlsx", ".xls")):
+            df_raw = pd.read_excel(uploaded_file)
+            st.success(f"✅ Excel soubor `{uploaded_file.name}` byl úspěšně načten.")
+
+        # B) Zpracování CSV / textových souborů
+        else:
+            bytes_data = uploaded_file.getvalue()
+            # Automatická detekce kódování (české znaky v Excel CSV bývají v cp1250)
+            nacteno = False
+            for kodovani in ["utf-8-sig", "utf-8", "cp1250", "iso-8859-2", "latin2"]:
+                try:
+                    text_content = bytes_data.decode(kodovani)
+                    # Detekce oddělovače (středník vs. čárka vs. tabulátor)
+                    prvni_radky = text_content[:2000]
+                    sep = ";" if prvni_radky.count(";") >= prvni_radky.count(",") else ","
+                    if prvni_radky.count("\t") > prvni_radky.count(sep):
+                        sep = "\t"
+                        
+                    df_raw = pd.read_csv(io.StringIO(text_content), sep=sep)
+                    nacteno = True
+                    st.success(f"✅ CSV soubor `{uploaded_file.name}` načten (kódování: {kodovani}).")
+                    break
+                except (UnicodeDecodeError, Exception):
+                    continue
+
+            if not nacteno:
+                st.error("❌ Nepodařilo se rozpoznat kódování CSV souboru. Zkuste soubor uložit jako Excel (.xlsx).")
+                st.stop()
+
     except Exception as e:
-        st.error(f"Chyba při čtení CSV: {e}")
+        st.error(f"❌ Chyba při otevírání souboru: {e}")
+        st.stop()
 
-if df_raw is not None:
-    col_trat = next((c for c in df_raw.columns if "trať" in c.lower() or "trat" in c.lower()), "trať")
-    col_kat = next((c for c in df_raw.columns if "kat" in c.lower()), "kategorie")
-    col_oddil = next((c for c in df_raw.columns if any(k in c.lower() for k in ["oddíl", "oddil", "posád", "tým"])), "oddíl")
+    # Očištění názvů sloupců (odstranění mezer)
+    df_raw.columns = [str(c).strip() for c in df_raw.columns]
 
-    # Důkladná očista textů
-    df_raw[col_trat] = df_raw[col_trat].astype(str).str.strip()
-    df_raw[col_kat] = df_raw[col_kat].astype(str).str.strip()
-    df_raw[col_oddil] = df_raw[col_oddil].astype(str).str.strip()
+    # Vyhledání klíčových sloupců bez ohledu na velikost písmen a diakritiku
+    def najdi_sloupec(kandidati):
+        for col in df_raw.columns:
+            col_low = col.lower()
+            if any(k in col_low for k in kandidati):
+                return col
+        return None
 
-    # Vizuální editor / kontrola přihlášek pro případ chyby zadané na webu
-    with st.expander("🔍 Kontrola a ruční oprava zařazení posádek (klikněte pro rozbalení)", expanded=False):
-        st.info("Zde můžete zkontrolovat nebo upravit zařazení posádky, pokud zástupce týmu na webu omylem zvolil špatnou kategorii.")
-        df_raw = st.data_editor(
-            df_raw,
-            column_order=[col_trat, col_kat, col_oddil],
-            use_container_width=True,
-            num_rows="dynamic"
-        )
+    col_trat = najdi_sloupec(["trať", "trat", "vzdalenost", "distance", "délka", "delka"])
+    col_kat = najdi_sloupec(["kategorie", "kat", "category"])
+    col_oddil = najdi_sloupec(["oddíl", "oddil", "klub", "tým", "tym", "posádk", "posadk", "team", "club"])
 
-    # Striktní unikátní identifikátor disciplíny
-    df_raw["_Disciplina_ID"] = df_raw[col_trat] + "m | " + df_raw[col_kat]
-    vsechny_discipliny = sorted(df_raw["_Disciplina_ID"].unique().tolist())
+    # Kontrola povinných sloupců
+    chybejici = []
+    if not col_trat: chybejici.append("trať (např. 200m, 500m, 1000m)")
+    if not col_kat: chybejici.append("kategorie (např. MIX, OPEN, ŽENY)")
+    if not col_oddil: chybejici.append("oddíl / tým / posádka")
 
-    st.write(f"Nalezeno celkem **{len(vsechny_discipliny)}** různých vypsaných disciplín.")
+    if chybejici:
+        st.error(f"⚠️ V souboru chybí následující povinné sloupce: **{', '.join(chybejici)}**.")
+        st.write("Nalezené sloupce v souboru:", list(df_raw.columns))
+        df_raw = None
+    else:
+        # Převedení hodnot na čistý text
+        df_raw[col_trat] = df_raw[col_trat].astype(str).str.strip()
+        df_raw[col_kat] = df_raw[col_kat].astype(str).str.strip()
+        df_raw[col_oddil] = df_raw[col_oddil].astype(str).str.strip()
+
+        with st.expander("🔍 Náhled a ruční úprava přihlášek (pokud je potřeba něco opravit)", expanded=False):
+            st.info("Zde můžete přímo v tabulce přepsat překlepy v názvu týmu nebo upravit kategorii.")
+            df_raw = st.data_editor(
+                df_raw,
+                column_order=[col_trat, col_kat, col_oddil],
+                use_container_width=True,
+                num_rows="dynamic"
+            )
+
+        # Unikátní identifikátor disciplíny
+        df_raw["_Disciplina_ID"] = df_raw[col_trat] + "m | " + df_raw[col_kat]
+        vsechny_discipliny = sorted(df_raw["_Disciplina_ID"].unique().tolist())
+        st.write(f"Celkem přihlášeno **{len(df_raw)} posádek** do **{len(vsechny_discipliny)}** různých disciplín.")
 
     # ===================================================================
     # 3. NASTAVENÍ JEDNOTLIVÝCH DNŮ
