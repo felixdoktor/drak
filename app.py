@@ -7,6 +7,43 @@ import io
 import os
 
 st.set_page_config(page_title="Startovní rozpis dračích lodí - Vícedenní", layout="wide")
+
+# ===================================================================
+# PŘIHLÁŠENÍ HESLEM
+# ===================================================================
+def over_heslo():
+    """Zobrazí přihlašovací formulář a zastaví běh aplikace, dokud není zadáno správné heslo."""
+    SPRAVNE_HESLO = "draci2026"  # Zde si nastavte své libovolné heslo
+
+    if "prihlasen" not in st.session_state:
+        st.session_state["prihlasen"] = False
+
+    if st.session_state["prihlasen"]:
+        return True
+
+    # Přihlašovací okno
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.title("🔒 Přihlášení do generátoru")
+        heslo_vstup = st.text_input("Zadejte přístupové heslo:", type="password")
+        
+        if st.button("Přihlásit se", type="primary", use_container_width=True):
+            if heslo_vstup == SPRAVNE_HESLO:
+                st.session_state["prihlasen"] = True
+                st.rerun()
+            else:
+                st.error("❌ Nesprávné heslo!")
+
+    st.stop()  # Zastaví načítání zbytku aplikace, dokud uživatel není přihlášen
+
+over_heslo()
+
+# Zde již pokračuje váš stávající kód:
+# st.title("🐉 Generátor vícedenního rozpisu závodů dračích lodí")
+# with st.sidebar: ...
+
+
+st.set_page_config(page_title="Startovní rozpis dračích lodí - Vícedenní", layout="wide")
 st.title("🐉 Generátor vícedenního rozpisu závodů dračích lodí")
 
 # ===================================================================
