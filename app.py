@@ -103,24 +103,77 @@ def nacti_zebricek_cpo():
 # ===================================================================
 # 1. ZÁKLADNÍ PARAMETRY ZÁVODU
 # ===================================================================
+    
 with st.sidebar:
     st.header("⚙️ Nastavení mistrovství")
     zavod_titul = st.text_input("Název akce:", value="20. MISTROVSTVÍ ČR DRAČÍCH LODÍ")
     zavod_misto_datum = st.text_input("Místo konání:", value="LABE ARÉNA RAČICE")
     zavod_podtitul = st.text_input("Podtitul / Seriál:", value="Euro Grand Prix Race")
-    
+
     st.divider()
-    oddelit_stejne_kluby = st.checkbox("🚫 Oddělit posádky ze stejného oddílu v rozjížďkách", value=True)
-    
-    # NOVÉ PŘEPÍNATELNÉ TLAČÍTKO PRO ČESKÝ POHÁR
-    pouzit_cpo = st.checkbox("🏆 Nasazovat podle žebříčku Českého poháru (ČP)", value=True)
-    
-    zebricek_cp = nacti_zebricek_cpo() if pouzit_cpo else {}
+
+    st.subheader("🏁 Pravidla nasazování")
+    oddelit_stejne_kluby = st.checkbox(
+        "🚫 Oddělit posádky ze stejného oddílu v rozjížďkách", 
+        value=True,
+        help="Zajistí, aby se posádky jednoho klubu nepotkaly hned v základní rozjížďce."
+    )
+
+    st.divider()
+
+    # --- SEKCE ČESKÉHO POHÁRU (ČP) ---
+    st.subheader("🏆 Český pohár (ČP)")
+    pouzit_cpo = st.checkbox(
+        "Nasazovat podle žebříčku ČP", 
+        value=False,
+        help="Seřadí posádky podle bodů v ČP a rozdělí je do rozjížděk serpentýnou s výhodnými dráhami."
+    )
+
+    zebricek_cp = {}
+
     if pouzit_cpo:
+        with st.spinner("Stahuji aktuální žebříček z dragonboat.cz..."):
+            zebricek_cp = nacti_zebricek_cpo()
+
         if zebricek_cp:
-            st.success(f"✅ Žebříček ČP načten ({len(zebricek_cp)} klubů).")
+            st.success(f"✅ Žebříček ČP načten online ({len(zebricek_cp)} klubů)")
+            with st.expander("👀 Zobrazit stažené pořadí a body"):
+                df_nahled_cp = pd.DataFrame(
+                    list(zebricek_cp.items()), 
+                    columns=["Klub / Posádka", "Body ČP"]
+                ).sort_values(by="Body ČP", ascending=False).reset_index(drop=True)
+                st.dataframe(df_nahled_cp, use_container_width=True, height=250)
         else:
-            st.info("ℹ️ Žebříček ČP online nedostupný (použije se standardní los).")
+            st.warning("⚠️ Web ČADL dočasně zablokoval automatické stažení (ochrana serveru).")
+            st.caption("Nahrajte žebříček ručně (Excel nebo CSV se sloupci 'klub' a 'body'):")
+            zebricek_file = st.file_uploader(
+                "Vybrat soubor žebříčku:", 
+                type=["xlsx", "xls", "csv"], 
+                key="cpo_backup"
+            )
+            if zebricek_file:
+                try:
+                    if zebricek_file.name.endswith(".csv"):
+                        df_z = pd.read_csv(zebricek_file)
+                    else:
+                        df_z = pd.read_excel(zebricek_file)
+
+                    # Flexibilní nalezení sloupců pro klub a body
+                    col_t = next(c for c in df_z.columns if any(k in c.lower() for k in ["oddíl", "oddil", "klub", "tým", "tym", "posádk", "posadk"]))
+                    col_b = next(c for c in df_z.columns if any(k in c.lower() for k in ["bod", "skóre", "skore", "celkem"]))
+
+                    df_z[col_t] = df_z[col_t].astype(str).str.strip()
+                    df_z[col_b] = pd.to_numeric(df_z[col_b].astype(str).str.extract(r'(\d+)')[0], errors='coerce').fillna(0).astype(int)
+
+                    zebricek_cp = dict(zip(df_z[col_t], df_z[col_b]))
+                    st.success(f"✅ Ruční žebříček načten ({len(zebricek_cp)} klubů)!")
+                except Exception as e:
+                    st.error(f"Chyba při načítání souboru žebříčku: {e}")
+
+    st.divider()
+    st.caption("Verze aplikace: 2.1 (Online Cloud Edition)")
+
+
 
 
 # ===================================================================
