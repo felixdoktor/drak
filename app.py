@@ -5,6 +5,9 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import io
 import os
+import difflib
+import urllib.request
+from bs4 import BeautifulSoup
 
 st.set_page_config(page_title="Startovní rozpis dračích lodí - Vícedenní", layout="wide")
 
@@ -45,6 +48,55 @@ over_heslo()
 
 st.set_page_config(page_title="Startovní rozpis dračích lodí - Vícedenní", layout="wide")
 st.title("🐉 Generátor vícedenního rozpisu závodů dračích lodí")
+
+# ===================================================================
+# STAHOVÁNÍ ŽEBŘÍČKU ČESKÉHO POHÁRU (ČP)
+# ===================================================================
+@st.cache_data(ttl=3600, show_spinner=False)
+def nacti_zebricek_cpo():
+    """Stáhne aktuální žebříček a body z oficiálního webu dragonboat.cz."""
+    url = "https://www.dragonboat.cz/poradi/"
+    try:
+        req = urllib.request.Request(
+            url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        )
+        with urllib.request.urlopen(req, timeout=8) as response:
+            html = response.read().decode('utf-8', errors='ignore')
+
+        soup = BeautifulSoup(html, 'html.parser')
+        tabulky = soup.find_all('table')
+        if not tabulky:
+            return {}
+
+        zebricek_body = {}
+        for row in tabulky[0].find_all('tr'):
+            bunky = [td.get_text(strip=True) for td in row.find_all(['td', 'th'])]
+            # Hledáme řádky s názvem týmu a celkovým počtem bodů
+            if len(bunky) >= 3:
+                nazev = bunky[1].strip()
+                # Vyhledání čísla bodů
+                body_str = ''.join(c for c in bunky[2] if c.isdigit())
+                if body_str and nazev:
+                    zebricek_body[nazev] = int(body_str)
+
+        return zebricek_body
+    except Exception:
+        return {}
+
+def najdi_body_posadky(nazev_tymu, zebricek_body):
+    """Najde body posádky v žebříčku s tolerancí drobných odchylek v názvu."""
+    if not zebricek_body:
+        return 0
+    # Přímá shoda
+    if nazev_tymu in zebricek_body:
+        return zebricek_body[nazev_tymu]
+    # Fuzzy shoda (podobný název)
+    shody = difflib.get_close_matches(nazev_tymu, zebricek_body.keys(), n=1, cutoff=0.55)
+    if shody:
+        return zebricek_body[shody[0]]
+    return 0
+
 
 # ===================================================================
 # 1. ZÁKLADNÍ PARAMETRY ZÁVODU
